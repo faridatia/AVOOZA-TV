@@ -12,6 +12,11 @@ workflows:
           cp lib/main.dart /tmp/main.dart
           flutter create --platforms=android --project-name avooza_tv --org com.avooza .
           cp /tmp/main.dart lib/main.dart
+
+          flutter pub add http
+          flutter pub add video_player
+          flutter pub add shared_preferences
+
           flutter pub get
 
       - name: Build AVOOZA TV APK
