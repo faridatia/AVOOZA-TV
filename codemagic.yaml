@@ -1,0 +1,22 @@
+workflows:
+  android-build:
+    name: AVOOZA TV Android
+    max_build_duration: 60
+
+    environment:
+      flutter: stable
+
+    scripts:
+      - name: Create Flutter project
+        script: |
+          cp lib/main.dart /tmp/main.dart
+          flutter create --platforms=android --project-name avooza_tv --org com.avooza .
+          cp /tmp/main.dart lib/main.dart
+          flutter pub get
+
+      - name: Build AVOOZA TV APK
+        script: |
+          flutter build apk --release
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
