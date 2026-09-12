@@ -10,12 +10,40 @@ workflows:
       - name: Create Flutter project
         script: |
           cp lib/main.dart /tmp/main.dart
-          flutter create --platforms=android --project-name avooza_tv --org com.avooza .
+
+          flutter create \
+            --platforms=android \
+            --project-name avooza_tv \
+            --org com.avooza \
+            .
+
           cp /tmp/main.dart lib/main.dart
 
           flutter pub add http
           flutter pub add video_player
           flutter pub add shared_preferences
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\\n'
+                  '    <uses-permission android:name="android.permission.INTERNET"/>'
+              )
+
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace(
+                  '<application',
+                  '<application android:usesCleartextTraffic="true"'
+              )
+
+          manifest.write_text(text)
+          PY
 
           flutter pub get
 
