@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +9,127 @@ void main() {
   runApp(const AvoozaApp());
 }
 
-const Map<String, Map<String, String>> kTexts = {
+/* =========================================================
+   MODELS
+========================================================= */
+
+class XtreamAccount {
+  final String server;
+  final String username;
+  final String password;
+
+  const XtreamAccount({
+    required this.server,
+    required this.username,
+    required this.password,
+  });
+
+  bool get isValid =>
+      server.trim().isNotEmpty &&
+      username.trim().isNotEmpty &&
+      password.trim().isNotEmpty;
+
+  String get cleanServer {
+    var value = server.trim();
+
+    while (value.endsWith('/')) {
+      value = value.substring(0, value.length - 1);
+    }
+
+    return value;
+  }
+
+  String apiUrl({String? action, Map<String, String>? extra}) {
+    final params = <String, String>{
+      'username': username,
+      'password': password,
+    };
+
+    if (action != null) {
+      params['action'] = action;
+    }
+
+    if (extra != null) {
+      params.addAll(extra);
+    }
+
+    final query = Uri(
+      queryParameters: params,
+    ).query;
+
+    return '$cleanServer/player_api.php?$query';
+  }
+
+  String liveUrl(String streamId) {
+    return '$cleanServer/live/$username/$password/$streamId.ts';
+  }
+
+  String movieUrl(
+    String streamId,
+    String extension,
+  ) {
+    final ext = extension.isEmpty ? 'mp4' : extension;
+    return '$cleanServer/movie/$username/$password/$streamId.$ext';
+  }
+
+  String seriesUrl(
+    String streamId,
+    String extension,
+  ) {
+    final ext = extension.isEmpty ? 'mp4' : extension;
+    return '$cleanServer/series/$username/$password/$streamId.$ext';
+  }
+}
+
+class MediaItem {
+  final String id;
+  final String name;
+  final String image;
+  final String categoryId;
+  final String extension;
+  final String streamType;
+
+  const MediaItem({
+    required this.id,
+    required this.name,
+    required this.image,
+    required this.categoryId,
+    required this.extension,
+    required this.streamType,
+  });
+}
+
+class CategoryItem {
+  final String id;
+  final String name;
+
+  const CategoryItem({
+    required this.id,
+    required this.name,
+  });
+}
+
+class SeriesEpisode {
+  final String id;
+  final String title;
+  final String extension;
+  final int episodeNumber;
+  final int seasonNumber;
+
+  const SeriesEpisode({
+    required this.id,
+    required this.title,
+    required this.extension,
+    required this.episodeNumber,
+    required this.seasonNumber,
+  });
+}
+
+/* =========================================================
+   TRANSLATION
+========================================================= */
+
+const Map<String, Map<String, String>> texts = {
   'en': {
     'home': 'Home',
     'live': 'Live TV',
@@ -16,34 +138,30 @@ const Map<String, Map<String, String>> kTexts = {
     'radio': 'Radio',
     'settings': 'Settings',
     'language': 'Language',
-    'featured': 'A World of Stories',
-    'featuredSub': 'Global entertainment in your language.',
-    'watchNow': 'Watch Now',
-    'continue': 'Continue Watching',
-    'addPlaylist': 'Add M3U URL',
-    'changePlaylist': 'Change Playlist',
-    'savedPlaylist': 'Saved Playlist',
+    'search': 'Search',
+    'all': 'All',
     'connect': 'Connect',
+    'save': 'Save',
     'cancel': 'Cancel',
-    'searchChannels': 'Search channels...',
-    'noChannels': 'No channels yet',
-    'noChannelsSub': 'Add your playlist and your channels will appear here.',
-    'moviesSub': 'Blockbusters & more',
-    'seriesSub': 'Binge your favorites',
-    'radioSub': 'Listen everywhere',
-    'liveSub': 'News, sports, channels',
-    'kids': 'Kids',
-    'kidsSub': 'Safe & fun for all',
-    'comingSoon': 'Coming next',
-    'clearPlaylist': 'Remove saved playlist',
-    'about': 'About AVOOZA TV',
-    'selectLang': 'Select language',
-    'changeChannel': 'Change channel',
+    'server': 'Server URL',
+    'username': 'Username',
+    'password': 'Password',
+    'account': 'Xtream Codes',
+    'notConfigured': 'Connect your Xtream Codes account',
+    'configure': 'Configure account',
+    'loading': 'Loading...',
+    'error': 'Unable to load content',
+    'retry': 'Retry',
+    'featured': 'A World of Stories',
+    'subtitle': 'Entertainment without borders.',
+    'watchNow': 'Watch Now',
+    'changeChannel': 'Channels',
     'previous': 'Previous',
     'next': 'Next',
-    'unablePlaylist': 'Unable to connect to playlist',
-    'noResults': 'No channels found in this playlist',
-    'demoNote': 'UI ready. Real VOD content can be connected next.',
+    'logout': 'Remove account',
+    'episodes': 'Episodes',
+    'season': 'Season',
+    'noContent': 'No content found',
   },
   'ar': {
     'home': 'الرئيسية',
@@ -53,71 +171,63 @@ const Map<String, Map<String, String>> kTexts = {
     'radio': 'الراديو',
     'settings': 'الإعدادات',
     'language': 'اللغة',
-    'featured': 'عالم من القصص',
-    'featuredSub': 'ترفيه عالمي بلغتك.',
-    'watchNow': 'شاهد الآن',
-    'continue': 'أكمل المشاهدة',
-    'addPlaylist': 'إضافة رابط M3U',
-    'changePlaylist': 'تغيير القائمة',
-    'savedPlaylist': 'القائمة المحفوظة',
+    'search': 'بحث',
+    'all': 'الكل',
     'connect': 'اتصال',
+    'save': 'حفظ',
     'cancel': 'إلغاء',
-    'searchChannels': 'ابحث عن القنوات...',
-    'noChannels': 'لا توجد قنوات بعد',
-    'noChannelsSub': 'أضف رابطك وستظهر القنوات هنا.',
-    'moviesSub': 'أفلام وأكثر',
-    'seriesSub': 'أفضل المسلسلات',
-    'radioSub': 'استمع في كل مكان',
-    'liveSub': 'أخبار، رياضة، قنوات',
-    'kids': 'الأطفال',
-    'kidsSub': 'آمن وممتع للجميع',
-    'comingSoon': 'قريباً',
-    'clearPlaylist': 'حذف القائمة المحفوظة',
-    'about': 'حول AVOOZA TV',
-    'selectLang': 'اختر اللغة',
-    'changeChannel': 'تغيير القناة',
+    'server': 'رابط السيرفر',
+    'username': 'اسم المستخدم',
+    'password': 'كلمة المرور',
+    'account': 'Xtream Codes',
+    'notConfigured': 'أدخل بيانات Xtream Codes',
+    'configure': 'إعداد الحساب',
+    'loading': 'جاري التحميل...',
+    'error': 'تعذر تحميل المحتوى',
+    'retry': 'إعادة المحاولة',
+    'featured': 'عالم من القصص',
+    'subtitle': 'ترفيه بلا حدود.',
+    'watchNow': 'شاهد الآن',
+    'changeChannel': 'القنوات',
     'previous': 'السابق',
     'next': 'التالي',
-    'unablePlaylist': 'تعذر الاتصال بالقائمة',
-    'noResults': 'لم يتم العثور على قنوات في هذه القائمة',
-    'demoNote': 'الواجهة جاهزة. ربط محتوى VOD الحقيقي يأتي في المرحلة التالية.',
+    'logout': 'حذف الحساب',
+    'episodes': 'الحلقات',
+    'season': 'الموسم',
+    'noContent': 'لا يوجد محتوى',
   },
   'fr': {
     'home': 'Accueil',
-    'live': 'Live TV',
+    'live': 'TV en direct',
     'movies': 'Films',
     'series': 'Séries',
     'radio': 'Radio',
     'settings': 'Paramètres',
     'language': 'Langue',
-    'featured': 'Un monde d’histoires',
-    'featuredSub': 'Divertissement mondial dans votre langue.',
-    'watchNow': 'Regarder',
-    'continue': 'Continuer',
-    'addPlaylist': 'Ajouter URL M3U',
-    'changePlaylist': 'Changer playlist',
-    'savedPlaylist': 'Playlist enregistrée',
-    'connect': 'Connecter',
+    'search': 'Rechercher',
+    'all': 'Tout',
+    'connect': 'Connexion',
+    'save': 'Enregistrer',
     'cancel': 'Annuler',
-    'searchChannels': 'Rechercher des chaînes...',
-    'noChannels': 'Pas encore de chaînes',
-    'noChannelsSub': 'Ajoutez votre playlist et vos chaînes apparaîtront ici.',
-    'moviesSub': 'Blockbusters et plus',
-    'seriesSub': 'Vos séries préférées',
-    'radioSub': 'Écoutez partout',
-    'liveSub': 'News, sports, chaînes',
-    'kids': 'Kids',
-    'kidsSub': 'Sûr & fun pour tous',
-    'comingSoon': 'Bientôt',
-    'clearPlaylist': 'Supprimer la playlist',
-    'about': 'À propos de AVOOZA TV',
-    'selectLang': 'Choisir la langue',
-    'changeChannel': 'Changer de chaîne',
+    'server': 'URL du serveur',
+    'username': 'Utilisateur',
+    'password': 'Mot de passe',
+    'account': 'Xtream Codes',
+    'notConfigured': 'Connectez votre compte Xtream Codes',
+    'configure': 'Configurer le compte',
+    'loading': 'Chargement...',
+    'error': 'Impossible de charger le contenu',
+    'retry': 'Réessayer',
+    'featured': 'Un monde d’histoires',
+    'subtitle': 'Le divertissement sans frontières.',
+    'watchNow': 'Regarder',
+    'changeChannel': 'Chaînes',
     'previous': 'Précédent',
     'next': 'Suivant',
-    'unablePlaylist': 'Impossible de se connecter à la playlist',
-    'noResults': 'Aucune chaîne trouvée dans cette playlist',
-    'demoNote': 'Interface prête. Le vrai contenu VOD peut être connecté ensuite.',
+    'logout': 'Supprimer le compte',
+    'episodes': 'Épisodes',
+    'season': 'Saison',
+    'noContent': 'Aucun contenu',
   },
   'nl': {
     'home': 'Home',
@@ -127,34 +237,30 @@ const Map<String, Map<String, String>> kTexts = {
     'radio': 'Radio',
     'settings': 'Instellingen',
     'language': 'Taal',
-    'featured': 'Een wereld vol verhalen',
-    'featuredSub': 'Wereldwijde entertainment in jouw taal.',
-    'watchNow': 'Nu kijken',
-    'continue': 'Verder kijken',
-    'addPlaylist': 'M3U URL toevoegen',
-    'changePlaylist': 'Playlist wijzigen',
-    'savedPlaylist': 'Opgeslagen playlist',
+    'search': 'Zoeken',
+    'all': 'Alles',
     'connect': 'Verbinden',
+    'save': 'Opslaan',
     'cancel': 'Annuleren',
-    'searchChannels': 'Zoek kanalen...',
-    'noChannels': 'Nog geen kanalen',
-    'noChannelsSub': 'Voeg je playlist toe en je kanalen verschijnen hier.',
-    'moviesSub': 'Films & meer',
-    'seriesSub': 'Jouw favoriete series',
-    'radioSub': 'Luister overal',
-    'liveSub': 'Nieuws, sport, kanalen',
-    'kids': 'Kids',
-    'kidsSub': 'Veilig & leuk voor iedereen',
-    'comingSoon': 'Binnenkort',
-    'clearPlaylist': 'Opgeslagen playlist verwijderen',
-    'about': 'Over AVOOZA TV',
-    'selectLang': 'Kies taal',
-    'changeChannel': 'Kanaal wijzigen',
+    'server': 'Server URL',
+    'username': 'Gebruikersnaam',
+    'password': 'Wachtwoord',
+    'account': 'Xtream Codes',
+    'notConfigured': 'Verbind je Xtream Codes-account',
+    'configure': 'Account instellen',
+    'loading': 'Laden...',
+    'error': 'Kan inhoud niet laden',
+    'retry': 'Opnieuw proberen',
+    'featured': 'Een wereld vol verhalen',
+    'subtitle': 'Entertainment zonder grenzen.',
+    'watchNow': 'Nu kijken',
+    'changeChannel': 'Kanalen',
     'previous': 'Vorige',
     'next': 'Volgende',
-    'unablePlaylist': 'Kan geen verbinding maken met de playlist',
-    'noResults': 'Geen kanalen gevonden in deze playlist',
-    'demoNote': 'UI is klaar. Echte VOD-content kan hierna gekoppeld worden.',
+    'logout': 'Account verwijderen',
+    'episodes': 'Afleveringen',
+    'season': 'Seizoen',
+    'noContent': 'Geen inhoud gevonden',
   },
   'zh': {
     'home': '首页',
@@ -164,34 +270,30 @@ const Map<String, Map<String, String>> kTexts = {
     'radio': '广播',
     'settings': '设置',
     'language': '语言',
-    'featured': '故事的世界',
-    'featuredSub': '用你的语言享受全球娱乐。',
-    'watchNow': '立即观看',
-    'continue': '继续观看',
-    'addPlaylist': '添加 M3U 链接',
-    'changePlaylist': '更改播放列表',
-    'savedPlaylist': '已保存列表',
+    'search': '搜索',
+    'all': '全部',
     'connect': '连接',
+    'save': '保存',
     'cancel': '取消',
-    'searchChannels': '搜索频道...',
-    'noChannels': '暂无频道',
-    'noChannelsSub': '添加你的播放列表后，频道会显示在这里。',
-    'moviesSub': '电影与更多',
-    'seriesSub': '你喜欢的剧集',
-    'radioSub': '随时收听',
-    'liveSub': '新闻、体育、频道',
-    'kids': '儿童',
-    'kidsSub': '安全有趣',
-    'comingSoon': '即将推出',
-    'clearPlaylist': '删除已保存列表',
-    'about': '关于 AVOOZA TV',
-    'selectLang': '选择语言',
-    'changeChannel': '切换频道',
-    'previous': '上一项',
-    'next': '下一项',
-    'unablePlaylist': '无法连接到播放列表',
-    'noResults': '此播放列表中未找到频道',
-    'demoNote': '界面已准备好，下一步可连接真实 VOD 内容。',
+    'server': '服务器地址',
+    'username': '用户名',
+    'password': '密码',
+    'account': 'Xtream Codes',
+    'notConfigured': '连接 Xtream Codes',
+    'configure': '配置账号',
+    'loading': '加载中...',
+    'error': '无法加载内容',
+    'retry': '重试',
+    'featured': '故事的世界',
+    'subtitle': '娱乐无国界。',
+    'watchNow': '立即观看',
+    'changeChannel': '频道',
+    'previous': '上一个',
+    'next': '下一个',
+    'logout': '删除账号',
+    'episodes': '剧集',
+    'season': '季',
+    'noContent': '没有内容',
   },
   'hi': {
     'home': 'होम',
@@ -201,40 +303,42 @@ const Map<String, Map<String, String>> kTexts = {
     'radio': 'रेडियो',
     'settings': 'सेटिंग्स',
     'language': 'भाषा',
-    'featured': 'कहानियों की दुनिया',
-    'featuredSub': 'आपकी भाषा में वैश्विक मनोरंजन।',
-    'watchNow': 'अभी देखें',
-    'continue': 'देखना जारी रखें',
-    'addPlaylist': 'M3U URL जोड़ें',
-    'changePlaylist': 'प्लेलिस्ट बदलें',
-    'savedPlaylist': 'सहेजी गई प्लेलिस्ट',
+    'search': 'खोज',
+    'all': 'सभी',
     'connect': 'कनेक्ट',
+    'save': 'सेव',
     'cancel': 'रद्द करें',
-    'searchChannels': 'चैनल खोजें...',
-    'noChannels': 'अभी कोई चैनल नहीं',
-    'noChannelsSub': 'अपनी प्लेलिस्ट जोड़ें और चैनल यहाँ दिखेंगे।',
-    'moviesSub': 'ब्लॉकबस्टर और अधिक',
-    'seriesSub': 'आपकी पसंदीदा सीरीज़',
-    'radioSub': 'हर जगह सुनें',
-    'liveSub': 'समाचार, खेल, चैनल',
-    'kids': 'किड्स',
-    'kidsSub': 'सुरक्षित और मज़ेदार',
-    'comingSoon': 'जल्द आ रहा है',
-    'clearPlaylist': 'सहेजी हुई प्लेलिस्ट हटाएँ',
-    'about': 'AVOOZA TV के बारे में',
-    'selectLang': 'भाषा चुनें',
-    'changeChannel': 'चैनल बदलें',
+    'server': 'सर्वर URL',
+    'username': 'यूज़रनेम',
+    'password': 'पासवर्ड',
+    'account': 'Xtream Codes',
+    'notConfigured': 'Xtream Codes कनेक्ट करें',
+    'configure': 'अकाउंट सेट करें',
+    'loading': 'लोड हो रहा है...',
+    'error': 'कंटेंट लोड नहीं हो सका',
+    'retry': 'फिर कोशिश करें',
+    'featured': 'कहानियों की दुनिया',
+    'subtitle': 'मनोरंजन बिना सीमाओं के।',
+    'watchNow': 'अभी देखें',
+    'changeChannel': 'चैनल',
     'previous': 'पिछला',
     'next': 'अगला',
-    'unablePlaylist': 'प्लेलिस्ट से कनेक्ट नहीं हो सका',
-    'noResults': 'इस प्लेलिस्ट में कोई चैनल नहीं मिला',
-    'demoNote': 'UI तैयार है। असली VOD सामग्री अगली स्टेप में जोड़ी जा सकती है।',
+    'logout': 'अकाउंट हटाएँ',
+    'episodes': 'एपिसोड',
+    'season': 'सीज़न',
+    'noContent': 'कोई कंटेंट नहीं',
   },
 };
 
-String tr(String lang, String key) {
-  return kTexts[lang]?[key] ?? kTexts['en']![key] ?? key;
+String tr(String language, String key) {
+  return texts[language]?[key] ??
+      texts['en']?[key] ??
+      key;
 }
+
+/* =========================================================
+   APP
+========================================================= */
 
 class AvoozaApp extends StatefulWidget {
   const AvoozaApp({super.key});
@@ -244,288 +348,590 @@ class AvoozaApp extends StatefulWidget {
 }
 
 class _AvoozaAppState extends State<AvoozaApp> {
-  String currentLanguage = 'en';
+  String language = 'en';
 
   @override
   void initState() {
     super.initState();
-    _loadLanguage();
+    loadLanguage();
   }
 
-  Future<void> _loadLanguage() async {
+  Future<void> loadLanguage() async {
     final prefs = await SharedPreferences.getInstance();
+
+    if (!mounted) return;
+
     setState(() {
-      currentLanguage = prefs.getString('language') ?? 'en';
+      language = prefs.getString('language') ?? 'en';
     });
   }
 
-  Future<void> _changeLanguage(String value) async {
+  Future<void> setLanguage(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language', value);
+
+    if (!mounted) return;
+
     setState(() {
-      currentLanguage = value;
+      language = value;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AVOOZA TV 2.0',
       debugShowCheckedModeBanner: false,
+      title: 'AVOOZA TV 3.0',
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF050817),
-        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF050816),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF7B5CFF),
+          seedColor: const Color(0xFF7C4DFF),
           brightness: Brightness.dark,
         ),
+        useMaterial3: true,
       ),
-      home: HomeShell(
-        language: currentLanguage,
-        onLanguageChanged: _changeLanguage,
+      home: MainShell(
+        language: language,
+        onLanguageChanged: setLanguage,
       ),
     );
   }
 }
 
-class Channel {
-  final String name;
-  final String url;
-  final String group;
+/* =========================================================
+   API SERVICE
+========================================================= */
 
-  Channel({
-    required this.name,
-    required this.url,
-    this.group = '',
-  });
+class XtreamService {
+  final XtreamAccount account;
+
+  const XtreamService(this.account);
+
+  Future<dynamic> getJson(String url) async {
+    http.Response response;
+
+    try {
+      response = await http.get(Uri.parse(url));
+    } catch (error) {
+      if (url.startsWith('https://')) {
+        final fallback =
+            url.replaceFirst('https://', 'http://');
+
+        response =
+            await http.get(Uri.parse(fallback));
+      } else {
+        rethrow;
+      }
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'HTTP ${response.statusCode}',
+      );
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  Future<bool> testAccount() async {
+    final data =
+        await getJson(account.apiUrl());
+
+    if (data is! Map) return false;
+
+    final userInfo = data['user_info'];
+
+    if (userInfo is! Map) return false;
+
+    return userInfo['auth'].toString() == '1';
+  }
+
+  Future<List<CategoryItem>> liveCategories() async {
+    return getCategories('get_live_categories');
+  }
+
+  Future<List<CategoryItem>> movieCategories() async {
+    return getCategories('get_vod_categories');
+  }
+
+  Future<List<CategoryItem>> seriesCategories() async {
+    return getCategories('get_series_categories');
+  }
+
+  Future<List<CategoryItem>> getCategories(
+    String action,
+  ) async {
+    final data = await getJson(
+      account.apiUrl(action: action),
+    );
+
+    if (data is! List) return [];
+
+    return data.map((item) {
+      return CategoryItem(
+        id: item['category_id']?.toString() ?? '',
+        name: item['category_name']?.toString() ?? 'Unknown',
+      );
+    }).toList();
+  }
+
+  Future<List<MediaItem>> liveStreams({
+    String? categoryId,
+  }) async {
+    final data = await getJson(
+      account.apiUrl(
+        action: 'get_live_streams',
+        extra: categoryId == null
+            ? null
+            : {'category_id': categoryId},
+      ),
+    );
+
+    return parseStreams(
+      data,
+      streamType: 'live',
+    );
+  }
+
+  Future<List<MediaItem>> movies({
+    String? categoryId,
+  }) async {
+    final data = await getJson(
+      account.apiUrl(
+        action: 'get_vod_streams',
+        extra: categoryId == null
+            ? null
+            : {'category_id': categoryId},
+      ),
+    );
+
+    return parseStreams(
+      data,
+      streamType: 'movie',
+    );
+  }
+
+  Future<List<MediaItem>> series({
+    String? categoryId,
+  }) async {
+    final data = await getJson(
+      account.apiUrl(
+        action: 'get_series',
+        extra: categoryId == null
+            ? null
+            : {'category_id': categoryId},
+      ),
+    );
+
+    if (data is! List) return [];
+
+    return data.map((item) {
+      return MediaItem(
+        id: item['series_id']?.toString() ?? '',
+        name: item['name']?.toString() ?? 'Series',
+        image: item['cover']?.toString() ?? '',
+        categoryId:
+            item['category_id']?.toString() ?? '',
+        extension: '',
+        streamType: 'series',
+      );
+    }).toList();
+  }
+
+  List<MediaItem> parseStreams(
+    dynamic data, {
+    required String streamType,
+  }) {
+    if (data is! List) return [];
+
+    return data.map((item) {
+      return MediaItem(
+        id: item['stream_id']?.toString() ?? '',
+        name: item['name']?.toString() ?? 'Channel',
+        image:
+            item['stream_icon']?.toString() ?? '',
+        categoryId:
+            item['category_id']?.toString() ?? '',
+        extension:
+            item['container_extension']?.toString() ?? '',
+        streamType: streamType,
+      );
+    }).toList();
+  }
+
+  Future<List<SeriesEpisode>> episodes(
+    String seriesId,
+  ) async {
+    final data = await getJson(
+      account.apiUrl(
+        action: 'get_series_info',
+        extra: {
+          'series_id': seriesId,
+        },
+      ),
+    );
+
+    if (data is! Map) return [];
+
+    final episodesData = data['episodes'];
+
+    if (episodesData is! Map) return [];
+
+    final result = <SeriesEpisode>[];
+
+    episodesData.forEach((seasonKey, value) {
+      if (value is! List) return;
+
+      final season =
+          int.tryParse(seasonKey.toString()) ?? 0;
+
+      for (final item in value) {
+        if (item is! Map) continue;
+
+        result.add(
+          SeriesEpisode(
+            id: item['id']?.toString() ?? '',
+            title: item['title']?.toString() ??
+                'Episode',
+            extension:
+                item['container_extension']?.toString() ??
+                    'mp4',
+            episodeNumber: int.tryParse(
+                  item['episode_num']?.toString() ??
+                      '',
+                ) ??
+                0,
+            seasonNumber: season,
+          ),
+        );
+      }
+    });
+
+    return result;
+  }
 }
 
-class MediaCardItem {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final List<Color> colors;
+/* =========================================================
+   MAIN SHELL
+========================================================= */
 
-  MediaCardItem({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.colors,
-  });
-}
-
-class RadioStation {
-  final String name;
-  final IconData icon;
-  final List<Color> colors;
-
-  RadioStation({
-    required this.name,
-    required this.icon,
-    required this.colors,
-  });
-}
-
-class HomeShell extends StatefulWidget {
+class MainShell extends StatefulWidget {
   final String language;
   final ValueChanged<String> onLanguageChanged;
 
-  const HomeShell({
+  const MainShell({
     super.key,
     required this.language,
     required this.onLanguageChanged,
   });
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  State<MainShell> createState() => _MainShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
-  int currentIndex = 0;
+class _MainShellState extends State<MainShell> {
+  int tab = 0;
 
-  void _goTo(int index) {
+  XtreamAccount? account;
+
+  bool loadingAccount = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadAccount();
+  }
+
+  Future<void> loadAccount() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    final server =
+        prefs.getString('xtream_server') ?? '';
+
+    final username =
+        prefs.getString('xtream_username') ?? '';
+
+    final password =
+        prefs.getString('xtream_password') ?? '';
+
+    if (!mounted) return;
+
     setState(() {
-      currentIndex = index;
+      if (server.isNotEmpty &&
+          username.isNotEmpty &&
+          password.isNotEmpty) {
+        account = XtreamAccount(
+          server: server,
+          username: username,
+          password: password,
+        );
+      }
+
+      loadingAccount = false;
     });
   }
 
-  void _openLanguageSheet() {
+  Future<void> saveAccount(
+    XtreamAccount newAccount,
+  ) async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    await prefs.setString(
+      'xtream_server',
+      newAccount.server,
+    );
+
+    await prefs.setString(
+      'xtream_username',
+      newAccount.username,
+    );
+
+    await prefs.setString(
+      'xtream_password',
+      newAccount.password,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      account = newAccount;
+    });
+  }
+
+  Future<void> removeAccount() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    await prefs.remove('xtream_server');
+    await prefs.remove('xtream_username');
+    await prefs.remove('xtream_password');
+
+    if (!mounted) return;
+
+    setState(() {
+      account = null;
+      tab = 0;
+    });
+  }
+
+  Future<void> openXtreamLogin() async {
+    final result =
+        await Navigator.push<XtreamAccount>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => XtreamLoginScreen(
+          language: widget.language,
+          existing: account,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      await saveAccount(result);
+    }
+  }
+
+  void openLanguage() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF0D1128),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor:
+          const Color(0xFF0C1025),
       builder: (_) {
-        final items = [
-          {'code': 'en', 'name': 'English'},
-          {'code': 'ar', 'name': 'العربية'},
-          {'code': 'fr', 'name': 'Français'},
-          {'code': 'nl', 'name': 'Nederlands'},
-          {'code': 'zh', 'name': '中文'},
-          {'code': 'hi', 'name': 'हिन्दी'},
-        ];
+        final languages = {
+          'en': 'English',
+          'ar': 'العربية',
+          'fr': 'Français',
+          'nl': 'Nederlands',
+          'zh': '中文',
+          'hi': 'हिन्दी',
+        };
 
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  tr(widget.language, 'selectLang'),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ...items.map((e) {
-                  final selected = widget.language == e['code'];
-                  return ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    tileColor: selected
-                        ? const Color(0xFF7B5CFF).withOpacity(.18)
-                        : Colors.white.withOpacity(.04),
-                    leading: const Icon(Icons.language_rounded),
-                    title: Text(e['name']!),
-                    trailing: selected
-                        ? const Icon(Icons.check_circle_rounded)
-                        : null,
-                    onTap: () {
-                      widget.onLanguageChanged(e['code']!);
-                      Navigator.pop(context);
-                    },
-                  );
-                }),
-              ],
-            ),
+          child: ListView(
+            shrinkWrap: true,
+            padding:
+                const EdgeInsets.all(16),
+            children: languages.entries.map(
+              (entry) {
+                return ListTile(
+                  leading:
+                      const Icon(Icons.language),
+                  title: Text(entry.value),
+                  trailing:
+                      widget.language == entry.key
+                          ? const Icon(
+                              Icons.check_circle,
+                            )
+                          : null,
+                  onTap: () {
+                    widget.onLanguageChanged(
+                      entry.key,
+                    );
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ).toList(),
           ),
         );
       },
     );
   }
 
-  void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SettingsScreen(
-          language: widget.language,
-          onLanguageChanged: widget.onLanguageChanged,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      DashboardPage(
-        language: widget.language,
-        onOpenTab: _goTo,
-      ),
-      LiveTvPage(language: widget.language),
-      MoviesPage(language: widget.language),
-      SeriesPage(language: widget.language),
-      RadioPage(language: widget.language),
-    ];
+    if (loadingAccount) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
-    final titles = [
-      tr(widget.language, 'home'),
-      tr(widget.language, 'live'),
-      tr(widget.language, 'movies'),
-      tr(widget.language, 'series'),
-      tr(widget.language, 'radio'),
+    final pages = [
+      HomePage(
+        language: widget.language,
+        account: account,
+        onNavigate: (index) {
+          setState(() {
+            tab = index;
+          });
+        },
+        onConnect: openXtreamLogin,
+      ),
+      MediaBrowserPage(
+        language: widget.language,
+        account: account,
+        type: 'live',
+        onConnect: openXtreamLogin,
+      ),
+      MediaBrowserPage(
+        language: widget.language,
+        account: account,
+        type: 'movie',
+        onConnect: openXtreamLogin,
+      ),
+      MediaBrowserPage(
+        language: widget.language,
+        account: account,
+        type: 'series',
+        onConnect: openXtreamLogin,
+      ),
+      RadioPage(
+        language: widget.language,
+      ),
     ];
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(.25),
-        title: Row(
-          children: [
-            const Icon(
-              Icons.play_circle_fill_rounded,
-              color: Color(0xFF7B5CFF),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'AVOOZA TV 2.0',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                titles[currentIndex],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(.72),
-                  fontSize: 15,
-                ),
-              ),
-            ),
-          ],
+        title: const Text(
+          'AVOOZA TV',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
         ),
         actions: [
           IconButton(
-            tooltip: tr(widget.language, 'language'),
-            icon: const Icon(Icons.language_rounded),
-            onPressed: _openLanguageSheet,
+            onPressed: openLanguage,
+            icon:
+                const Icon(Icons.language_rounded),
           ),
           IconButton(
-            tooltip: tr(widget.language, 'settings'),
-            icon: const Icon(Icons.settings_rounded),
-            onPressed: _openSettings,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SettingsScreen(
+                    language:
+                        widget.language,
+                    account: account,
+                    onLanguageChanged:
+                        widget.onLanguageChanged,
+                    onEditAccount:
+                        openXtreamLogin,
+                    onRemoveAccount:
+                        removeAccount,
+                  ),
+                ),
+              );
+            },
+            icon:
+                const Icon(Icons.settings),
           ),
         ],
       ),
       body: AvoozaBackground(
         child: IndexedStack(
-          index: currentIndex,
+          index: tab,
           children: pages,
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        height: 74,
-        selectedIndex: currentIndex,
-        backgroundColor: const Color(0xFF070B1B),
-        indicatorColor: const Color(0xFF7B5CFF).withOpacity(.25),
-        onDestinationSelected: _goTo,
+      bottomNavigationBar:
+          NavigationBar(
+        selectedIndex: tab,
+        onDestinationSelected:
+            (value) {
+          setState(() {
+            tab = value;
+          });
+        },
         destinations: [
           NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home_rounded),
-            label: tr(widget.language, 'home'),
+            icon:
+                const Icon(Icons.home_outlined),
+            selectedIcon:
+                const Icon(Icons.home),
+            label:
+                tr(widget.language, 'home'),
           ),
           NavigationDestination(
-            icon: const Icon(Icons.live_tv_outlined),
-            selectedIcon: const Icon(Icons.live_tv_rounded),
-            label: tr(widget.language, 'live'),
+            icon:
+                const Icon(Icons.live_tv_outlined),
+            selectedIcon:
+                const Icon(Icons.live_tv),
+            label:
+                tr(widget.language, 'live'),
           ),
           NavigationDestination(
-            icon: const Icon(Icons.movie_outlined),
-            selectedIcon: const Icon(Icons.movie_rounded),
-            label: tr(widget.language, 'movies'),
+            icon:
+                const Icon(Icons.movie_outlined),
+            selectedIcon:
+                const Icon(Icons.movie),
+            label:
+                tr(widget.language, 'movies'),
           ),
           NavigationDestination(
-            icon: const Icon(Icons.video_library_outlined),
-            selectedIcon: const Icon(Icons.video_library_rounded),
-            label: tr(widget.language, 'series'),
+            icon: const Icon(
+              Icons.video_library_outlined,
+            ),
+            selectedIcon: const Icon(
+              Icons.video_library,
+            ),
+            label:
+                tr(widget.language, 'series'),
           ),
           NavigationDestination(
-            icon: const Icon(Icons.radio_outlined),
-            selectedIcon: const Icon(Icons.radio_rounded),
-            label: tr(widget.language, 'radio'),
+            icon:
+                const Icon(Icons.radio_outlined),
+            selectedIcon:
+                const Icon(Icons.radio),
+            label:
+                tr(widget.language, 'radio'),
           ),
         ],
       ),
     );
   }
 }
+
+/* =========================================================
+   BACKGROUND
+========================================================= */
 
 class AvoozaBackground extends StatelessWidget {
   final Widget child;
@@ -539,42 +945,65 @@ class AvoozaBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Container(color: const Color(0xFF050817)),
-        Positioned(
-          top: -80,
-          left: -40,
-          child: _glow(const Color(0xFF772CFF), 220),
+        Container(
+          decoration:
+              const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end:
+                  Alignment.bottomRight,
+              colors: [
+                Color(0xFF050816),
+                Color(0xFF0C1234),
+                Color(0xFF080818),
+              ],
+            ),
+          ),
         ),
         Positioned(
-          top: 100,
-          right: -60,
-          child: _glow(const Color(0xFF00B8FF), 220),
+          top: -80,
+          left: -80,
+          child: glow(
+            const Color(0xFF772CFF),
+            280,
+          ),
+        ),
+        Positioned(
+          top: 80,
+          right: -100,
+          child: glow(
+            const Color(0xFF00C8FF),
+            280,
+          ),
         ),
         Positioned(
           bottom: -100,
-          left: 10,
-          child: _glow(const Color(0xFFFF4FD8), 250),
-        ),
-        Positioned(
-          bottom: 10,
-          right: -40,
-          child: _glow(const Color(0xFF7B5CFF), 180),
+          left: 20,
+          child: glow(
+            const Color(0xFFFF00B8),
+            260,
+          ),
         ),
         child,
       ],
     );
   }
 
-  Widget _glow(Color color, double size) {
+  Widget glow(
+    Color color,
+    double size,
+  ) {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
+      decoration:
+          BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
+        gradient:
+            RadialGradient(
           colors: [
-            color.withOpacity(.38),
-            color.withOpacity(.18),
+            color.withOpacity(.32),
+            color.withOpacity(.08),
             Colors.transparent,
           ],
         ),
@@ -583,258 +1012,238 @@ class AvoozaBackground extends StatelessWidget {
   }
 }
 
-class DashboardPage extends StatelessWidget {
-  final String language;
-  final ValueChanged<int> onOpenTab;
+/* =========================================================
+   HOME
+========================================================= */
 
-  const DashboardPage({
+class HomePage extends StatelessWidget {
+  final String language;
+  final XtreamAccount? account;
+  final ValueChanged<int> onNavigate;
+  final VoidCallback onConnect;
+
+  const HomePage({
     super.key,
     required this.language,
-    required this.onOpenTab,
+    required this.account,
+    required this.onNavigate,
+    required this.onConnect,
   });
 
   @override
   Widget build(BuildContext context) {
-    final media = [
-      MediaCardItem(
-        title: tr(language, 'live'),
-        subtitle: tr(language, 'liveSub'),
-        icon: Icons.live_tv_rounded,
-        colors: const [
-          Color(0xFF0072FF),
-          Color(0xFF00C6FF),
-        ],
-      ),
-      MediaCardItem(
-        title: tr(language, 'movies'),
-        subtitle: tr(language, 'moviesSub'),
-        icon: Icons.movie_creation_outlined,
-        colors: const [
-          Color(0xFF8328FF),
-          Color(0xFFCD5BFF),
-        ],
-      ),
-      MediaCardItem(
-        title: tr(language, 'series'),
-        subtitle: tr(language, 'seriesSub'),
-        icon: Icons.video_library_rounded,
-        colors: const [
-          Color(0xFFB400FF),
-          Color(0xFFFF4D96),
-        ],
-      ),
-      MediaCardItem(
-        title: tr(language, 'radio'),
-        subtitle: tr(language, 'radioSub'),
-        icon: Icons.radio_rounded,
-        colors: const [
-          Color(0xFFFF7A18),
-          Color(0xFFFFB74D),
-        ],
-      ),
-      MediaCardItem(
-        title: tr(language, 'kids'),
-        subtitle: tr(language, 'kidsSub'),
-        icon: Icons.sentiment_satisfied_alt_rounded,
-        colors: const [
-          Color(0xFF10B981),
-          Color(0xFF34D399),
-        ],
-      ),
-    ];
-
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
+      padding:
+          const EdgeInsets.all(18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
-          _heroBanner(),
-          const SizedBox(height: 18),
-          GridView.builder(
-            shrinkWrap: true,
-            itemCount: media.length,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 1.15,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.all(24),
+            decoration:
+                BoxDecoration(
+              borderRadius:
+                  BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white
+                    .withOpacity(.12),
+              ),
+              gradient:
+                  const LinearGradient(
+                colors: [
+                  Color(0xFF13174A),
+                  Color(0xFF082B67),
+                  Color(0xFF181043),
+                ],
+              ),
             ),
-            itemBuilder: (context, index) {
-              final item = media[index];
-              final tabIndex = index > 3 ? 0 : index + 1;
-
-              return _mediaTile(
-                item: item,
-                onTap: () => onOpenTab(tabIndex),
-              );
-            },
-          ),
-          const SizedBox(height: 22),
-          Text(
-            tr(language, 'continue'),
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 172,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
-                _posterCard(
-                  title: 'The Last of Us',
-                  subtitle: 'S1 E5 · 28 min left',
-                  colors: const [
-                    Color(0xFF2B4162),
-                    Color(0xFF12100E),
-                  ],
+                Text(
+                  tr(
+                    language,
+                    'featured',
+                  ),
+                  style:
+                      const TextStyle(
+                    fontSize: 36,
+                    fontWeight:
+                        FontWeight.w900,
+                  ),
                 ),
-                _posterCard(
-                  title: 'Dune',
-                  subtitle: '2h 46m · Epic sci-fi',
-                  colors: const [
-                    Color(0xFF6B4E2E),
-                    Color(0xFFD9A066),
-                  ],
+                const SizedBox(
+                  height: 8,
                 ),
-                _posterCard(
-                  title: 'Stranger Things',
-                  subtitle: 'S4 E1 · 36 min left',
-                  colors: const [
-                    Color(0xFF2C1839),
-                    Color(0xFF8B1E3F),
-                  ],
+                Text(
+                  tr(
+                    language,
+                    'subtitle',
+                  ),
+                  style:
+                      const TextStyle(
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(
+                  height: 22,
+                ),
+                FilledButton.icon(
+                  onPressed:
+                      account == null
+                          ? onConnect
+                          : () =>
+                              onNavigate(1),
+                  icon: Icon(
+                    account == null
+                        ? Icons.login
+                        : Icons
+                            .play_arrow,
+                  ),
+                  label: Text(
+                    account == null
+                        ? tr(
+                            language,
+                            'configure',
+                          )
+                        : tr(
+                            language,
+                            'watchNow',
+                          ),
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(
+            height: 20,
+          ),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics:
+                const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+            childAspectRatio: 1.25,
+            children: [
+              homeCard(
+                title:
+                    tr(language, 'live'),
+                icon:
+                    Icons.live_tv_rounded,
+                colors: const [
+                  Color(0xFF006EFF),
+                  Color(0xFF00C6FF),
+                ],
+                onTap: () =>
+                    onNavigate(1),
+              ),
+              homeCard(
+                title: tr(
+                  language,
+                  'movies',
+                ),
+                icon:
+                    Icons.movie_rounded,
+                colors: const [
+                  Color(0xFF9A22FF),
+                  Color(0xFFE045FF),
+                ],
+                onTap: () =>
+                    onNavigate(2),
+              ),
+              homeCard(
+                title: tr(
+                  language,
+                  'series',
+                ),
+                icon: Icons
+                    .video_library_rounded,
+                colors: const [
+                  Color(0xFFE00080),
+                  Color(0xFFFF5656),
+                ],
+                onTap: () =>
+                    onNavigate(3),
+              ),
+              homeCard(
+                title: tr(
+                  language,
+                  'radio',
+                ),
+                icon:
+                    Icons.radio_rounded,
+                colors: const [
+                  Color(0xFFFF701E),
+                  Color(0xFFFFB52B),
+                ],
+                onTap: () =>
+                    onNavigate(4),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _heroBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: Colors.white.withOpacity(.10),
-        ),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF0A0E23),
-            Color(0xFF091D50),
-            Color(0xFF10224A),
-          ],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            tr(language, 'featured'),
-            style: const TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            tr(language, 'featuredSub'),
-          ),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: () => onOpenTab(1),
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: Text(
-              tr(language, 'watchNow'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _mediaTile({
-    required MediaCardItem item,
+  Widget homeCard({
+    required String title,
+    required IconData icon,
+    required List<Color> colors,
     required VoidCallback onTap,
   }) {
     return InkWell(
+      borderRadius:
+          BorderRadius.circular(26),
       onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            colors: [
-              item.colors.first.withOpacity(.80),
-              item.colors.last.withOpacity(.35),
-            ],
+        padding:
+            const EdgeInsets.all(18),
+        decoration:
+            BoxDecoration(
+          borderRadius:
+              BorderRadius.circular(26),
+          gradient:
+              LinearGradient(
+            colors: colors,
+            begin:
+                Alignment.topLeft,
+            end:
+                Alignment.bottomRight,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first
+                  .withOpacity(.28),
+              blurRadius: 28,
+              offset:
+                  const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
             Icon(
-              item.icon,
-              size: 34,
+              icon,
+              size: 42,
             ),
             const Spacer(),
             Text(
-              item.title,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              item.subtitle,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _posterCard({
-    required String title,
-    required String subtitle,
-    required List<Color> colors,
-  }) {
-    return Container(
-      width: 220,
-      margin: const EdgeInsets.only(right: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          colors: colors,
-        ),
-      ),
-      child: Align(
-        alignment: Alignment.bottomLeft,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
               title,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+              style:
+                  const TextStyle(
+                fontSize: 24,
+                fontWeight:
+                    FontWeight.bold,
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
             ),
           ],
         ),
@@ -843,205 +1252,101 @@ class DashboardPage extends StatelessWidget {
   }
 }
 
-class LiveTvPage extends StatefulWidget {
-  final String language;
+/* =========================================================
+   LOGIN
+========================================================= */
 
-  const LiveTvPage({
+class XtreamLoginScreen
+    extends StatefulWidget {
+  final String language;
+  final XtreamAccount? existing;
+
+  const XtreamLoginScreen({
     super.key,
     required this.language,
+    this.existing,
   });
 
   @override
-  State<LiveTvPage> createState() => _LiveTvPageState();
+  State<XtreamLoginScreen>
+      createState() =>
+          _XtreamLoginScreenState();
 }
 
-class _LiveTvPageState extends State<LiveTvPage> {
-  final TextEditingController _playlistController =
-      TextEditingController();
+class _XtreamLoginScreenState
+    extends State<XtreamLoginScreen> {
+  late TextEditingController server;
+  late TextEditingController username;
+  late TextEditingController password;
 
-  final TextEditingController _searchController =
-      TextEditingController();
-
-  List<Channel> channels = [];
-  List<Channel> filteredChannels = [];
   bool loading = false;
+  String? error;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedPlaylist();
-    _searchController.addListener(_applySearch);
+
+    server = TextEditingController(
+      text:
+          widget.existing?.server ?? '',
+    );
+
+    username = TextEditingController(
+      text:
+          widget.existing?.username ?? '',
+    );
+
+    password = TextEditingController(
+      text:
+          widget.existing?.password ?? '',
+    );
   }
 
   @override
   void dispose() {
-    _playlistController.dispose();
-    _searchController.dispose();
+    server.dispose();
+    username.dispose();
+    password.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSavedPlaylist() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('m3u_url') ?? '';
+  Future<void> connect() async {
+    final account = XtreamAccount(
+      server: server.text.trim(),
+      username: username.text.trim(),
+      password: password.text.trim(),
+    );
 
-    _playlistController.text = saved;
+    if (!account.isValid) return;
 
-    if (saved.isNotEmpty) {
-      await _loadM3U(
-        saved,
-        silent: true,
-      );
-    }
-  }
-
-  void _applySearch() {
-    final query =
-        _searchController.text.trim().toLowerCase();
-
-    setState(() {
-      filteredChannels = query.isEmpty
-          ? List.from(channels)
-          : channels
-              .where(
-                (c) =>
-                    c.name.toLowerCase().contains(query),
-              )
-              .toList();
-    });
-  }
-
-  Future<http.Response> _downloadPlaylist(
-    String rawUrl,
-  ) async {
-    try {
-      return await http.get(
-        Uri.parse(rawUrl),
-      );
-    } catch (e) {
-      final message =
-          e.toString().toLowerCase();
-
-      if (rawUrl.startsWith('https://') &&
-          (message.contains('wrong_version_number') ||
-              message.contains('handshakeexception') ||
-              message.contains('ssl'))) {
-        return await http.get(
-          Uri.parse(
-            rawUrl.replaceFirst(
-              'https://',
-              'http://',
-            ),
-          ),
-        );
-      }
-
-      rethrow;
-    }
-  }
-
-  Future<void> _loadM3U(
-    String url, {
-    bool silent = false,
-  }) async {
     setState(() {
       loading = true;
+      error = null;
     });
 
     try {
-      final response =
-          await _downloadPlaylist(url);
+      final valid =
+          await XtreamService(account)
+              .testAccount();
 
-      if (response.statusCode != 200) {
+      if (!valid) {
         throw Exception(
-          'Status code: ${response.statusCode}',
+          'Invalid account',
         );
       }
 
-      final lines =
-          response.body.split('\n');
+      if (!mounted) return;
 
-      final result = <Channel>[];
-
-      String? currentName;
-      String currentGroup = '';
-
-      for (final rawLine in lines) {
-        final line = rawLine.trim();
-
-        if (line.startsWith('#EXTINF')) {
-          final groupMatch = RegExp(
-            r'group-title="([^"]*)"',
-          ).firstMatch(line);
-
-          currentGroup =
-              groupMatch?.group(1) ?? '';
-
-          final commaIndex =
-              line.lastIndexOf(',');
-
-          currentName = commaIndex != -1
-              ? line
-                  .substring(
-                    commaIndex + 1,
-                  )
-                  .trim()
-              : 'Channel ${result.length + 1}';
-        } else if (line.startsWith('http://') ||
-            line.startsWith('https://')) {
-          result.add(
-            Channel(
-              name: currentName ??
-                  'Channel ${result.length + 1}',
-              url: line,
-              group: currentGroup,
-            ),
-          );
-
-          currentName = null;
-          currentGroup = '';
-        }
-      }
-
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      await prefs.setString(
-        'm3u_url',
-        url,
+      Navigator.pop(
+        context,
+        account,
       );
+    } catch (e) {
+      if (!mounted) return;
 
       setState(() {
-        channels = result;
-        filteredChannels =
-            List.from(result);
+        error = e.toString();
       });
-
-      if (!silent && mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          SnackBar(
-            content: Text(
-              result.isEmpty
-                  ? tr(
-                      widget.language,
-                      'noResults',
-                    )
-                  : '${result.length} channels loaded',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!silent && mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          SnackBar(
-            content: Text(
-              '${tr(widget.language, 'unablePlaylist')}\n$e',
-            ),
-          ),
-        );
-      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1051,111 +1356,447 @@ class _LiveTvPageState extends State<LiveTvPage> {
     }
   }
 
-  void _openPlaylistDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(
-          tr(
-            widget.language,
-            'addPlaylist',
-          ),
-        ),
-        content: TextField(
-          controller:
-              _playlistController,
-          decoration:
-              const InputDecoration(
-            hintText:
-                'http://example.com/playlist.m3u',
-            border:
-                OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(context),
-            child: Text(
-              tr(
-                widget.language,
-                'cancel',
-              ),
-            ),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final url =
-                  _playlistController
-                      .text
-                      .trim();
-
-              Navigator.pop(context);
-
-              if (url.isNotEmpty) {
-                await _loadM3U(url);
-              }
-            },
-            child: Text(
-              tr(
-                widget.language,
-                'connect',
-              ),
-            ),
-          ),
-        ],
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            Text(tr(
+          widget.language,
+          'account',
+        )),
       ),
+      body: AvoozaBackground(
+        child: Center(
+          child: ConstrainedBox(
+            constraints:
+                const BoxConstraints(
+              maxWidth: 600,
+            ),
+            child: ListView(
+              padding:
+                  const EdgeInsets.all(
+                24,
+              ),
+              children: [
+                const Icon(
+                  Icons
+                      .account_circle_rounded,
+                  size: 80,
+                  color:
+                      Color(0xFF8B6CFF),
+                ),
+                const SizedBox(
+                  height: 30,
+                ),
+                TextField(
+                  controller: server,
+                  keyboardType:
+                      TextInputType.url,
+                  decoration:
+                      InputDecoration(
+                    labelText: tr(
+                      widget.language,
+                      'server',
+                    ),
+                    hintText:
+                        'http://server.com:8080',
+                    border:
+                        const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(
+                  height: 16,
+                ),
+                TextField(
+                  controller: username,
+                  decoration:
+                      InputDecoration(
+                    labelText: tr(
+                      widget.language,
+                      'username',
+                    ),
+                    border:
+                        const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(
+                  height: 16,
+                ),
+                TextField(
+                  controller: password,
+                  obscureText: true,
+                  decoration:
+                      InputDecoration(
+                    labelText: tr(
+                      widget.language,
+                      'password',
+                    ),
+                    border:
+                        const OutlineInputBorder(),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(
+                    height: 14,
+                  ),
+                  Text(
+                    error!,
+                    style:
+                        const TextStyle(
+                      color:
+                          Colors.redAccent,
+                    ),
+                  ),
+                ],
+                const SizedBox(
+                  height: 24,
+                ),
+                FilledButton.icon(
+                  onPressed:
+                      loading
+                          ? null
+                          : connect,
+                  icon: loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child:
+                              CircularProgressIndicator(
+                            strokeWidth:
+                                2,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.login,
+                        ),
+                  label: Text(
+                    tr(
+                      widget.language,
+                      'connect',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/* =========================================================
+   MEDIA BROWSER
+========================================================= */
+
+class MediaBrowserPage
+    extends StatefulWidget {
+  final String language;
+  final XtreamAccount? account;
+  final String type;
+  final VoidCallback onConnect;
+
+  const MediaBrowserPage({
+    super.key,
+    required this.language,
+    required this.account,
+    required this.type,
+    required this.onConnect,
+  });
+
+  @override
+  State<MediaBrowserPage>
+      createState() =>
+          _MediaBrowserPageState();
+}
+
+class _MediaBrowserPageState
+    extends State<MediaBrowserPage> {
+  bool loading = true;
+
+  List<CategoryItem> categories = [];
+  List<MediaItem> items = [];
+  List<MediaItem> filtered = [];
+
+  String selectedCategory = '';
+  String search = '';
+
+  XtreamService? get service =>
+      widget.account == null
+          ? null
+          : XtreamService(
+              widget.account!,
+            );
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget.account != null) {
+      load();
+    } else {
+      loading = false;
+    }
+  }
+
+  @override
+  void didUpdateWidget(
+    covariant MediaBrowserPage oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.account?.username !=
+            widget.account?.username ||
+        oldWidget.account?.server !=
+            widget.account?.server) {
+      if (widget.account != null) {
+        load();
+      }
+    }
+  }
+
+  Future<void> load({
+    String? category,
+  }) async {
+    final api = service;
+
+    if (api == null) return;
+
+    setState(() {
+      loading = true;
+    });
+
+    try {
+      List<CategoryItem> cats = categories;
+      List<MediaItem> data = [];
+
+      if (widget.type == 'live') {
+        if (cats.isEmpty) {
+          cats =
+              await api.liveCategories();
+        }
+
+        data = await api.liveStreams(
+          categoryId: category,
+        );
+      }
+
+      if (widget.type == 'movie') {
+        if (cats.isEmpty) {
+          cats =
+              await api.movieCategories();
+        }
+
+        data = await api.movies(
+          categoryId: category,
+        );
+      }
+
+      if (widget.type == 'series') {
+        if (cats.isEmpty) {
+          cats =
+              await api.seriesCategories();
+        }
+
+        data = await api.series(
+          categoryId: category,
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        categories = cats;
+        items = data;
+        applyFilter();
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        items = [];
+        filtered = [];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
+    }
+  }
+
+  void applyFilter() {
+    final q = search.trim().toLowerCase();
+
+    filtered = q.isEmpty
+        ? List.from(items)
+        : items
+            .where(
+              (item) => item.name
+                  .toLowerCase()
+                  .contains(q),
+            )
+            .toList();
+  }
+
+  String get title {
+    if (widget.type == 'live') {
+      return tr(
+        widget.language,
+        'live',
+      );
+    }
+
+    if (widget.type == 'movie') {
+      return tr(
+        widget.language,
+        'movies',
+      );
+    }
+
+    return tr(
+      widget.language,
+      'series',
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.account == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment:
+              MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.link_off_rounded,
+              size: 72,
+            ),
+            const SizedBox(
+              height: 18,
+            ),
+            Text(
+              tr(
+                widget.language,
+                'notConfigured',
+              ),
+            ),
+            const SizedBox(
+              height: 18,
+            ),
+            FilledButton(
+              onPressed:
+                  widget.onConnect,
+              child: Text(
+                tr(
+                  widget.language,
+                  'configure',
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       children: [
-        Padding(
-          padding:
-              const EdgeInsets.all(16),
-          child: Column(
+        SizedBox(
+          height: 64,
+          child: ListView(
+            padding:
+                const EdgeInsets.symmetric(
+              horizontal: 12,
+            ),
+            scrollDirection:
+                Axis.horizontal,
             children: [
-              FilledButton.icon(
-                onPressed:
-                    _openPlaylistDialog,
-                icon: const Icon(
-                  Icons.add_link_rounded,
+              Padding(
+                padding:
+                    const EdgeInsets.all(
+                  8,
                 ),
-                label: Text(
-                  tr(
-                    widget.language,
-                    'changePlaylist',
-                  ),
-                ),
-              ),
-              const SizedBox(
-                height: 12,
-              ),
-              TextField(
-                controller:
-                    _searchController,
-                decoration:
-                    InputDecoration(
-                  prefixIcon:
-                      const Icon(
-                    Icons.search_rounded,
-                  ),
-                  hintText: tr(
-                    widget.language,
-                    'searchChannels',
-                  ),
-                  border:
-                      OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      18,
+                child: ChoiceChip(
+                  label: Text(
+                    tr(
+                      widget.language,
+                      'all',
                     ),
                   ),
+                  selected:
+                      selectedCategory
+                          .isEmpty,
+                  onSelected: (_) {
+                    selectedCategory =
+                        '';
+                    load();
+                  },
                 ),
               ),
+              ...categories.map(
+                (category) {
+                  return Padding(
+                    padding:
+                        const EdgeInsets
+                            .all(8),
+                    child: ChoiceChip(
+                      label: Text(
+                        category.name,
+                      ),
+                      selected:
+                          selectedCategory ==
+                              category.id,
+                      onSelected: (_) {
+                        selectedCategory =
+                            category.id;
+
+                        load(
+                          category:
+                              category.id,
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
             ],
+          ),
+        ),
+        Padding(
+          padding:
+              const EdgeInsets.fromLTRB(
+            14,
+            4,
+            14,
+            12,
+          ),
+          child: TextField(
+            decoration:
+                InputDecoration(
+              prefixIcon:
+                  const Icon(
+                Icons.search,
+              ),
+              hintText: tr(
+                widget.language,
+                'search',
+              ),
+              border:
+                  OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(
+                  18,
+                ),
+              ),
+            ),
+            onChanged: (value) {
+              setState(() {
+                search = value;
+                applyFilter();
+              });
+            },
           ),
         ),
         Expanded(
@@ -1164,185 +1805,354 @@ class _LiveTvPageState extends State<LiveTvPage> {
                   child:
                       CircularProgressIndicator(),
                 )
-              : filteredChannels
-                      .isEmpty
+              : filtered.isEmpty
                   ? Center(
-                      child:
-                          FilledButton(
-                        onPressed:
-                            _openPlaylistDialog,
-                        child: Text(
-                          tr(
-                            widget.language,
-                            'addPlaylist',
-                          ),
+                      child: Text(
+                        tr(
+                          widget.language,
+                          'noContent',
                         ),
                       ),
                     )
-                  : ListView.separated(
-                      padding:
-                          const EdgeInsets
-                              .all(16),
-                      itemCount:
-                          filteredChannels
-                              .length,
-                      separatorBuilder:
-                          (_, index) =>
-                              const SizedBox(
-                        height: 10,
-                      ),
-                      itemBuilder:
-                          (context, index) {
-                        final channel =
-                            filteredChannels[
-                                index];
-
-                        final actualIndex =
-                            channels.indexOf(
-                          channel,
-                        );
-
-                        return ListTile(
-                          tileColor:
-                              Colors.white
-                                  .withOpacity(
-                                      .05),
-                          shape:
-                              RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius
-                                    .circular(
-                              18,
-                            ),
-                          ),
-                          leading:
-                              const Icon(
-                            Icons
-                                .live_tv_rounded,
-                          ),
-                          title: Text(
-                            channel.name,
-                          ),
-                          subtitle: Text(
-                            channel.group
-                                    .isEmpty
-                                ? channel.url
-                                : channel
-                                    .group,
-                            maxLines: 1,
-                            overflow:
-                                TextOverflow
-                                    .ellipsis,
-                          ),
-                          trailing:
-                              const Icon(
-                            Icons
-                                .play_arrow_rounded,
-                          ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    PlayerScreen(
-                                  language:
-                                      widget
-                                          .language,
-                                  channels:
-                                      channels,
-                                  initialIndex:
-                                      actualIndex,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                  : widget.type == 'live'
+                      ? liveList()
+                      : mediaGrid(),
         ),
       ],
     );
   }
+
+  Widget liveList() {
+    return ListView.separated(
+      padding:
+          const EdgeInsets.all(14),
+      itemCount: filtered.length,
+      separatorBuilder:
+          (_, __) =>
+              const SizedBox(
+        height: 8,
+      ),
+      itemBuilder:
+          (context, index) {
+        final item =
+            filtered[index];
+
+        return ListTile(
+          shape:
+              RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(
+              18,
+            ),
+          ),
+          tileColor:
+              Colors.white
+                  .withOpacity(.06),
+          leading:
+              channelLogo(item),
+          title:
+              Text(item.name),
+          trailing:
+              const Icon(
+            Icons
+                .play_arrow_rounded,
+          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    LivePlayerScreen(
+                  language:
+                      widget.language,
+                  account:
+                      widget.account!,
+                  channels:
+                      filtered,
+                  initialIndex:
+                      index,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget mediaGrid() {
+    return GridView.builder(
+      padding:
+          const EdgeInsets.all(14),
+      gridDelegate:
+          const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 240,
+        mainAxisExtent: 300,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: filtered.length,
+      itemBuilder:
+          (context, index) {
+        final item =
+            filtered[index];
+
+        return InkWell(
+          borderRadius:
+              BorderRadius.circular(
+            20,
+          ),
+          onTap: () {
+            if (widget.type ==
+                'movie') {
+              final url = widget
+                  .account!
+                  .movieUrl(
+                item.id,
+                item.extension,
+              );
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SimplePlayerScreen(
+                    title:
+                        item.name,
+                    url: url,
+                  ),
+                ),
+              );
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SeriesDetailsScreen(
+                    language:
+                        widget.language,
+                    account:
+                        widget.account!,
+                    series: item,
+                  ),
+                ),
+              );
+            }
+          },
+          child: Container(
+            decoration:
+                BoxDecoration(
+              borderRadius:
+                  BorderRadius.circular(
+                20,
+              ),
+              color: Colors.white
+                  .withOpacity(.06),
+            ),
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius:
+                        const BorderRadius
+                            .vertical(
+                      top:
+                          Radius.circular(
+                        20,
+                      ),
+                    ),
+                    child:
+                        item.image.isEmpty
+                            ? Container(
+                                width:
+                                    double.infinity,
+                                color:
+                                    Colors.black26,
+                                child:
+                                    Icon(
+                                  widget.type ==
+                                          'movie'
+                                      ? Icons
+                                          .movie
+                                      : Icons
+                                          .video_library,
+                                  size:
+                                      70,
+                                ),
+                              )
+                            : Image.network(
+                                item.image,
+                                width:
+                                    double.infinity,
+                                fit: BoxFit
+                                    .cover,
+                                errorBuilder:
+                                    (_, __, ___) {
+                                  return Container(
+                                    color:
+                                        Colors.black26,
+                                    child:
+                                        const Center(
+                                      child:
+                                          Icon(
+                                        Icons
+                                            .broken_image,
+                                        size:
+                                            60,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets
+                          .all(12),
+                  child: Text(
+                    item.name,
+                    maxLines: 2,
+                    overflow:
+                        TextOverflow
+                            .ellipsis,
+                    style:
+                        const TextStyle(
+                      fontWeight:
+                          FontWeight
+                              .bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget channelLogo(
+    MediaItem item,
+  ) {
+    if (item.image.isEmpty) {
+      return const CircleAvatar(
+        child:
+            Icon(Icons.live_tv),
+      );
+    }
+
+    return CircleAvatar(
+      backgroundColor:
+          Colors.transparent,
+      child: ClipOval(
+        child: Image.network(
+          item.image,
+          fit: BoxFit.cover,
+          errorBuilder:
+              (_, __, ___) {
+            return const Icon(
+              Icons.live_tv,
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
-class PlayerScreen extends StatefulWidget {
+/* =========================================================
+   LIVE PLAYER
+========================================================= */
+
+class LivePlayerScreen
+    extends StatefulWidget {
   final String language;
-  final List<Channel> channels;
+  final XtreamAccount account;
+  final List<MediaItem> channels;
   final int initialIndex;
 
-  const PlayerScreen({
+  const LivePlayerScreen({
     super.key,
     required this.language,
+    required this.account,
     required this.channels,
     required this.initialIndex,
   });
 
   @override
-  State<PlayerScreen> createState() =>
-      _PlayerScreenState();
+  State<LivePlayerScreen>
+      createState() =>
+          _LivePlayerScreenState();
 }
 
-class _PlayerScreenState
-    extends State<PlayerScreen> {
-  VideoPlayerController? controller;
-  int currentIndex = 0;
-  bool loading = true;
-  String? errorText;
+class _LivePlayerScreenState
+    extends State<LivePlayerScreen> {
+  late int index;
 
-  Channel get currentChannel =>
-      widget.channels[currentIndex];
+  VideoPlayerController? controller;
+
+  bool loading = true;
+  String? error;
+
+  MediaItem get current =>
+      widget.channels[index];
 
   @override
   void initState() {
     super.initState();
-    currentIndex =
+
+    index =
         widget.initialIndex;
-    _playCurrent();
+
+    play();
   }
 
-  @override
-  void dispose() {
-    controller?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _playCurrent() async {
-    setState(() {
-      loading = true;
-      errorText = null;
-    });
-
+  Future<void> play() async {
     await controller?.dispose();
 
+    if (!mounted) return;
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
     try {
-      final c =
-          VideoPlayerController.networkUrl(
-        Uri.parse(
-          currentChannel.url,
-        ),
+      final url =
+          widget.account.liveUrl(
+        current.id,
       );
 
-      controller = c;
+      final player =
+          VideoPlayerController
+              .networkUrl(
+        Uri.parse(url),
+      );
 
-      await c.initialize();
-      await c.play();
+      controller = player;
 
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
+      await player.initialize();
+      await player.play();
+
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          loading = false;
-          errorText = e.toString();
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+        error = e.toString();
+      });
     }
   }
 
-  Future<void> _changeChannel(
+  Future<void> change(
     int newIndex,
   ) async {
     if (newIndex < 0 ||
@@ -1352,526 +2162,421 @@ class _PlayerScreenState
     }
 
     setState(() {
-      currentIndex = newIndex;
+      index = newIndex;
     });
 
-    await _playCurrent();
+    await play();
   }
 
-  void _showChannelPicker() {
+  void channelList() {
     showModalBottomSheet(
       context: context,
-      builder: (_) => SafeArea(
-        child: ListView.builder(
-          itemCount:
-              widget.channels.length,
-          itemBuilder:
-              (context, index) {
-            final channel =
-                widget.channels[index];
+      backgroundColor:
+          const Color(0xFF0D1125),
+      builder: (_) {
+        return SafeArea(
+          child: ListView.builder(
+            itemCount:
+                widget.channels.length,
+            itemBuilder:
+                (context, itemIndex) {
+              final channel =
+                  widget.channels[
+                      itemIndex];
 
-            return ListTile(
-              leading: const Icon(
-                Icons.tv_rounded,
-              ),
-              title: Text(
-                channel.name,
-              ),
-              onTap: () async {
-                Navigator.pop(
-                  context,
-                );
+              return ListTile(
+                leading: const Icon(
+                  Icons.live_tv,
+                ),
+                title:
+                    Text(channel.name),
+                trailing:
+                    itemIndex == index
+                        ? const Icon(
+                            Icons.check,
+                          )
+                        : null,
+                onTap: () {
+                  Navigator.pop(
+                    context,
+                  );
 
-                await _changeChannel(
-                  index,
-                );
-              },
-            );
-          },
-        ),
-      ),
+                  change(
+                    itemIndex,
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
   @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final canPrev =
-        currentIndex > 0;
-
-    final canNext =
-        currentIndex <
-            widget.channels.length - 1;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          currentChannel.name,
+          current.name,
           maxLines: 1,
           overflow:
               TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(
+            onPressed:
+                channelList,
             icon: const Icon(
               Icons
                   .playlist_play_rounded,
             ),
-            onPressed:
-                _showChannelPicker,
           ),
         ],
       ),
-      body: AvoozaBackground(
-        child: Column(
-          children: [
-            Expanded(
-              child: Center(
-                child: loading
-                    ? const CircularProgressIndicator()
-                    : errorText != null
-                        ? Padding(
-                            padding:
-                                const EdgeInsets
-                                    .all(24),
-                            child: Text(
-                              errorText!,
-                              textAlign:
-                                  TextAlign
-                                      .center,
-                            ),
-                          )
-                        : controller == null ||
-                                !controller!
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.black,
+              width:
+                  double.infinity,
+              child: loading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(),
+                    )
+                  : error != null
+                      ? Center(
+                          child:
+                              Text(error!),
+                        )
+                      : Center(
+                          child:
+                              AspectRatio(
+                            aspectRatio:
+                                controller!
                                     .value
-                                    .isInitialized
-                            ? const Text(
-                                'Player not ready',
-                              )
-                            : AspectRatio(
-                                aspectRatio:
-                                    controller!
-                                        .value
-                                        .aspectRatio,
-                                child:
-                                    VideoPlayer(
-                                  controller!,
-                                ),
-                              ),
-              ),
-            ),
-            Padding(
-              padding:
-                  const EdgeInsets.all(
-                16,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child:
-                        OutlinedButton(
-                      onPressed:
-                          canPrev
-                              ? () =>
-                                  _changeChannel(
-                                    currentIndex -
-                                        1,
-                                  )
-                              : null,
-                      child: Text(
-                        tr(
-                          widget.language,
-                          'previous',
+                                    .aspectRatio,
+                            child:
+                                VideoPlayer(
+                              controller!,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 10,
-                  ),
-                  Expanded(
-                    child:
-                        FilledButton(
-                      onPressed:
-                          _showChannelPicker,
-                      child: Text(
-                        tr(
-                          widget.language,
-                          'changeChannel',
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 10,
-                  ),
-                  Expanded(
-                    child:
-                        OutlinedButton(
-                      onPressed:
-                          canNext
-                              ? () =>
-                                  _changeChannel(
-                                    currentIndex +
-                                        1,
-                                  )
-                              : null,
-                      child: Text(
-                        tr(
-                          widget.language,
-                          'next',
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class MoviesPage extends StatelessWidget {
-  final String language;
-
-  const MoviesPage({
-    super.key,
-    required this.language,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        '${tr(language, 'movies')}\n${tr(language, 'demoNote')}',
-        textAlign:
-            TextAlign.center,
-        style: const TextStyle(
-          fontSize: 24,
-        ),
-      ),
-    );
-  }
-}
-
-class SeriesPage extends StatelessWidget {
-  final String language;
-
-  const SeriesPage({
-    super.key,
-    required this.language,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        '${tr(language, 'series')}\n${tr(language, 'demoNote')}',
-        textAlign:
-            TextAlign.center,
-        style: const TextStyle(
-          fontSize: 24,
-        ),
-      ),
-    );
-  }
-}
-
-class RadioPage extends StatelessWidget {
-  final String language;
-
-  const RadioPage({
-    super.key,
-    required this.language,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final stations = [
-      RadioStation(
-        name: 'Avooza Hits',
-        icon:
-            Icons.graphic_eq_rounded,
-        colors: const [
-          Color(0xFFFF6A00),
-          Color(0xFFEE0979),
-        ],
-      ),
-      RadioStation(
-        name: 'News 24',
-        icon:
-            Icons.campaign_rounded,
-        colors: const [
-          Color(0xFF0575E6),
-          Color(0xFF021B79),
-        ],
-      ),
-      RadioStation(
-        name: 'Quran Radio',
-        icon: Icons.radio_rounded,
-        colors: const [
-          Color(0xFF11998E),
-          Color(0xFF38EF7D),
-        ],
-      ),
-      RadioStation(
-        name: 'Chill Beats',
-        icon:
-            Icons.headphones_rounded,
-        colors: const [
-          Color(0xFF8E2DE2),
-          Color(0xFF4A00E0),
-        ],
-      ),
-    ];
-
-    return GridView.builder(
-      padding:
-          const EdgeInsets.all(16),
-      itemCount:
-          stations.length,
-      gridDelegate:
-          const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-      ),
-      itemBuilder:
-          (context, index) {
-        final station =
-            stations[index];
-
-        return Container(
-          padding:
-              const EdgeInsets.all(
-            16,
-          ),
-          decoration:
-              BoxDecoration(
-            borderRadius:
-                BorderRadius.circular(
-              22,
-            ),
-            gradient:
-                LinearGradient(
-              colors:
-                  station.colors,
             ),
           ),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment
-                    .start,
-            children: [
-              Icon(
-                station.icon,
-                size: 36,
-              ),
-              const Spacer(),
-              Text(
-                station.name,
-                style:
-                    const TextStyle(
-                  fontSize: 20,
-                  fontWeight:
-                      FontWeight.bold,
+          Padding(
+            padding:
+                const EdgeInsets.all(
+              14,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child:
+                      OutlinedButton.icon(
+                    onPressed:
+                        index > 0
+                            ? () =>
+                                change(
+                                  index -
+                                      1,
+                                )
+                            : null,
+                    icon:
+                        const Icon(
+                      Icons
+                          .skip_previous,
+                    ),
+                    label: Text(
+                      tr(
+                        widget.language,
+                        'previous',
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              Text(
-                tr(
-                  language,
-                  'radioSub',
+                const SizedBox(
+                  width: 10,
                 ),
-              ),
-            ],
+                Expanded(
+                  child:
+                      FilledButton.icon(
+                    onPressed:
+                        channelList,
+                    icon:
+                        const Icon(
+                      Icons.list,
+                    ),
+                    label: Text(
+                      tr(
+                        widget.language,
+                        'changeChannel',
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(
+                  width: 10,
+                ),
+                Expanded(
+                  child:
+                      OutlinedButton.icon(
+                    onPressed: index <
+                            widget.channels
+                                    .length -
+                                1
+                        ? () =>
+                            change(
+                              index +
+                                  1,
+                            )
+                        : null,
+                    icon:
+                        const Icon(
+                      Icons.skip_next,
+                    ),
+                    label: Text(
+                      tr(
+                        widget.language,
+                        'next',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
 
-class SettingsScreen
+/* =========================================================
+   SERIES DETAILS
+========================================================= */
+
+class SeriesDetailsScreen
     extends StatefulWidget {
   final String language;
-  final ValueChanged<String>
-      onLanguageChanged;
+  final XtreamAccount account;
+  final MediaItem series;
 
-  const SettingsScreen({
+  const SeriesDetailsScreen({
     super.key,
     required this.language,
-    required this.onLanguageChanged,
+    required this.account,
+    required this.series,
   });
 
   @override
-  State<SettingsScreen>
+  State<SeriesDetailsScreen>
       createState() =>
-          _SettingsScreenState();
+          _SeriesDetailsScreenState();
 }
 
-class _SettingsScreenState
-    extends State<SettingsScreen> {
-  late String selectedLanguage;
+class _SeriesDetailsScreenState
+    extends State<SeriesDetailsScreen> {
+  bool loading = true;
+  List<SeriesEpisode> episodes = [];
 
   @override
   void initState() {
     super.initState();
-    selectedLanguage =
-        widget.language;
+    load();
   }
 
-  Future<void>
-      _clearPlaylist() async {
-    final prefs =
-        await SharedPreferences
-            .getInstance();
-
-    await prefs.remove(
-      'm3u_url',
-    );
-
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            tr(
-              widget.language,
-              'clearPlaylist',
-            ),
-          ),
-        ),
+  Future<void> load() async {
+    try {
+      final data =
+          await XtreamService(
+        widget.account,
+      ).episodes(
+        widget.series.id,
       );
+
+      if (!mounted) return;
+
+      setState(() {
+        episodes = data;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          tr(
-            widget.language,
-            'settings',
-          ),
-        ),
+      appBar:
+          AppBar(
+        title:
+            Text(widget.series.name),
       ),
       body: AvoozaBackground(
-        child: ListView(
-          padding:
-              const EdgeInsets.all(
-            16,
-          ),
-          children: [
-            DropdownButtonFormField<
-                String>(
-              initialValue:
-                  selectedLanguage,
-              items: const [
-                DropdownMenuItem(
-                  value: 'en',
-                  child:
-                      Text('English'),
+        child: loading
+            ? const Center(
+                child:
+                    CircularProgressIndicator(),
+              )
+            : ListView.separated(
+                padding:
+                    const EdgeInsets.all(
+                  16,
                 ),
-                DropdownMenuItem(
-                  value: 'ar',
-                  child:
-                      Text('العربية'),
+                itemCount:
+                    episodes.length,
+                separatorBuilder:
+                    (_, __) =>
+                        const SizedBox(
+                  height: 8,
                 ),
-                DropdownMenuItem(
-                  value: 'fr',
-                  child:
-                      Text('Français'),
-                ),
-                DropdownMenuItem(
-                  value: 'nl',
-                  child: Text(
-                    'Nederlands',
-                  ),
-                ),
-                DropdownMenuItem(
-                  value: 'zh',
-                  child: Text('中文'),
-                ),
-                DropdownMenuItem(
-                  value: 'hi',
-                  child:
-                      Text('हिन्दी'),
-                ),
-              ],
-              onChanged:
-                  (value) {
-                if (value == null) {
-                  return;
-                }
+                itemBuilder:
+                    (context, index) {
+                  final episode =
+                      episodes[index];
 
-                setState(() {
-                  selectedLanguage =
-                      value;
-                });
+                  return ListTile(
+                    tileColor:
+                        Colors.white
+                            .withOpacity(
+                                .06),
+                    shape:
+                        RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius
+                              .circular(
+                        16,
+                      ),
+                    ),
+                    leading:
+                        CircleAvatar(
+                      child: Text(
+                        episode
+                            .episodeNumber
+                            .toString(),
+                      ),
+                    ),
+                    title:
+                        Text(
+                      episode.title,
+                    ),
+                    subtitle: Text(
+                      '${tr(widget.language, 'season')} ${episode.seasonNumber}',
+                    ),
+                    trailing:
+                        const Icon(
+                      Icons
+                          .play_arrow,
+                    ),
+                    onTap: () {
+                      final url =
+                          widget.account
+                              .seriesUrl(
+                        episode.id,
+                        episode
+                            .extension,
+                      );
 
-                widget
-                    .onLanguageChanged(
-                  value,
-                );
-              },
-              decoration:
-                  const InputDecoration(
-                border:
-                    OutlineInputBorder(),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SimplePlayerScreen(
+                            title: episode
+                                .title,
+                            url: url,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-            ),
-            const SizedBox(
-              height: 14,
-            ),
-            ListTile(
-              tileColor:
-                  Colors.white
-                      .withOpacity(.05),
-              leading:
-                  const Icon(
-                Icons
-                    .delete_forever_rounded,
-              ),
-              title: Text(
-                tr(
-                  widget.language,
-                  'clearPlaylist',
-                ),
-              ),
-              onTap:
-                  _clearPlaylist,
-            ),
-            const SizedBox(
-              height: 14,
-            ),
-            ListTile(
-              tileColor:
-                  Colors.white
-                      .withOpacity(.05),
-              leading:
-                  const Icon(
-                Icons
-                    .info_outline_rounded,
-              ),
-              title: Text(
-                tr(
-                  widget.language,
-                  'about',
-                ),
-              ),
-              subtitle:
-                  const Text(
-                'AVOOZA TV 2.0',
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
- 
 
+/* =========================================================
+   SIMPLE PLAYER
+========================================================= */
+
+class SimplePlayerScreen
+    extends StatefulWidget {
+  final String title;
+  final String url;
+
+  const SimplePlayerScreen({
+    super.key,
+    required this.title,
+    required this.url,
+  });
+
+  @override
+  State<SimplePlayerScreen>
+      createState() =>
+          _SimplePlayerScreenState();
+}
+
+class _SimplePlayerScreenState
+    extends State<SimplePlayerScreen> {
+  VideoPlayerController? controller;
+
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    play();
+  }
+
+  Future<void> play() async {
+    try {
+      final player =
+          VideoPlayerController
+              .networkUrl(
+        Uri.parse(widget.url),
+      );
+
+      controller = player;
+
+      await player.initialize();
+      await player.play();
+
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+        error = e.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context)
