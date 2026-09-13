@@ -7,7 +7,7 @@ workflows:
       flutter: stable
 
     scripts:
-      - name: Create Flutter project
+      - name: Create AVOOZA TV project
         script: |
           cp lib/main.dart /tmp/main.dart
 
@@ -23,17 +23,22 @@ workflows:
           flutter pub add video_player
           flutter pub add shared_preferences
 
+          flutter pub get
+
+      - name: Configure Android internet
+        script: |
           python3 - <<'PY'
           from pathlib import Path
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          text = manifest.read_text()
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          text = path.read_text()
 
-          if 'android.permission.INTERNET' not in text:
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+
+          if permission not in text:
               text = text.replace(
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\\n'
-                  '    <uses-permission android:name="android.permission.INTERNET"/>'
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission
               )
 
           if 'android:usesCleartextTraffic=' not in text:
@@ -42,10 +47,12 @@ workflows:
                   '<application android:usesCleartextTraffic="true"'
               )
 
-          manifest.write_text(text)
+          path.write_text(text)
           PY
 
-          flutter pub get
+      - name: Flutter analyze
+        script: |
+          flutter analyze --no-fatal-infos
 
       - name: Build AVOOZA TV APK
         script: |
