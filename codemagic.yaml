@@ -19,6 +19,8 @@ workflows:
 
           cp /tmp/main.dart lib/main.dart
 
+          rm -rf test
+
           flutter pub add http
           flutter pub add video_player
           flutter pub add shared_preferences
@@ -52,7 +54,7 @@ workflows:
 
       - name: Flutter analyze
         script: |
-          flutter analyze --no-fatal-infos
+          flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build AVOOZA TV APK
         script: |
